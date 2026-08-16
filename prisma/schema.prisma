@@ -1,0 +1,276 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 String          @id @default(cuid())
+  firstName          String
+  lastName           String
+  email              String          @unique
+  password           String
+  role               String          @default("READER") // READER | AUTHOR | ADMIN
+  isVerified         Boolean         @default(false)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  profile            Profile?
+  posts              Post[]
+  comments           Comment[]
+  reactions          Reaction[]
+  bookmarks          Bookmark[]
+  followers          Follow[]        @relation("Following")
+  following          Follow[]        @relation("Followers")
+  postEdits          PostRevision[]  @relation("PostEdits")
+  notifications      Notification[]  @relation("UserNotifications")
+  actedNotifs        Notification[]  @relation("NotificationActor")
+  subscriber         Subscriber?
+  webhooks           Webhook[]
+}
+
+model Profile {
+  id                 String   @id @default(cuid())
+  age                Int?
+  bio                String?
+  phoneNumber        String?
+  address            String?
+  profilePicture     String?
+  profilePictureId   String?
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Post {
+  id                 String          @id @default(cuid())
+  title              String
+  slug               String          @unique
+  excerpt            String?
+  content            String          // Raw Markdown
+  contentHtml        String?         // Rendered & sanitized HTML
+  coverImage         String?         // Cloudinary URL
+  coverImageId       String?         // Cloudinary public_id
+  status             String          @default("DRAFT") // DRAFT | PUBLISHED | SCHEDULED | ARCHIVED
+  readingTimeMinutes Int             @default(0)
+  wordCount          Int             @default(0)
+  viewCount          Int             @default(0)
+
+  // SEO metadata
+  metaTitle          String?
+  metaDescription    String?
+  canonicalUrl       String?
+  ogImage            String?
+
+  // Scheduling
+  publishedAt        DateTime?
+  scheduledPublishAt DateTime?
+
+  // Soft delete
+  deletedAt          DateTime?
+
+  // Relations
+  authorId           String
+  author             User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categoryId         String?
+  category           Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  tags               PostTag[]
+  comments           Comment[]
+  reactions          Reaction[]
+  bookmarks          Bookmark[]
+  revisions          PostRevision[]
+  postViews          PostView[]
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([authorId])
+  @@index([status, publishedAt])
+  @@index([slug])
+  @@index([categoryId])
+}
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?
+
+  // Adjacency list for hierarchy
+  parentId    String?
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryTree")
+
+  posts       Post[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  posts     PostTag[]
+  createdAt DateTime  @default(now())
+}
+
+model PostTag {
+  postId String
+  tagId  String
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  content   String
+  isEdited  Boolean   @default(false)
+
+  // Self-referencing for threading
+  parentId  String?
+  parent    Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentThread")
+
+  postId    String
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  deletedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([postId, createdAt])
+  @@index([parentId])
+}
+
+model Reaction {
+  id     String @id @default(cuid())
+  type   String @default("LIKE") // LIKE | CLAP | LOVE | INSIGHTFUL | CELEBRATE
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId, type])
+  @@index([postId])
+}
+
+model Bookmark {
+  id     String @id @default(cuid())
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+}
+
+model Follow {
+  id          String @id @default(cuid())
+
+  followerId  String
+  follower    User   @relation("Followers", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User   @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model PostRevision {
+  id        String   @id @default(cuid())
+  version   Int
+  title     String
+  content   String
+  excerpt   String?
+
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  editorId  String
+  editor    User     @relation("PostEdits", fields: [editorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, version])
+  @@index([postId, version])
+}
+
+model PostView {
+  id          String   @id @default(cuid())
+  postId      String
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  visitorHash String
+  readPercent Int?
+  referrer    String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([postId, createdAt])
+  @@index([visitorHash, postId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // NEW_FOLLOWER | COMMENT | REACTION | POST_PUBLISHED
+  message   String
+  isRead    Boolean  @default(false)
+  data      String?  // JSON stringified payload
+
+  userId    String
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead, createdAt])
+}
+
+model Subscriber {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  isConfirmed  Boolean   @default(false)
+  confirmToken String?   @unique
+  unsubToken   String    @unique @default(cuid())
+
+  userId       String?   @unique
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  subscribedAt DateTime  @default(now())
+  confirmedAt  DateTime?
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  url       String
+  secret    String
+  events    String   // Comma-separated or JSON list of events
+  isActive  Boolean  @default(true)
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}

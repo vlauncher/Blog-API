@@ -1,0 +1,60 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blog_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - DATABASE_URL=file:/app/prisma/dev.db
+      - REDIS_URL=redis://redis:6379
+      - SITE_URL=${SITE_URL:-http://localhost:8000}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:-default_access_super_secret_key_change_in_production_1234567890}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-default_refresh_super_secret_key_change_in_production_1234567890}
+      - JWT_ACCESS_EXPIRES_IN=${JWT_ACCESS_EXPIRES_IN:-15m}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_FROM=${EMAIL_FROM:-Blog API <noreply@example.com>}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+    volumes:
+      - sqlite_data:/app/prisma
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - blog-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: blog_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - blog-network
+
+volumes:
+  sqlite_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  blog-network:
+    driver: bridge
