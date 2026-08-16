@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-export const postStatusEnum = z.enum(["DRAFT", "PUBLISHED", "SCHEDULED", "ARCHIVED"]);
+export const postStatusEnum = z.enum([
+  "DRAFT",
+  "PENDING_REVIEW",
+  "PUBLISHED",
+  "SCHEDULED",
+  "ARCHIVED",
+  "REJECTED",
+]);
 
 export const createPostSchema = z.object({
   title: z.string().min(3).max(250).trim(),

@@ -38,7 +38,7 @@ export class PostsService {
     }
   }
 
-  async createPost(userId: string, input: CreatePostInput) {
+  async createPost(userId: string, userRole: string, input: CreatePostInput) {
     const slug = await generateUniqueSlug(input.title, async (s) => {
       const found = await prisma.post.findUnique({ where: { slug: s } });
       return Boolean(found);
@@ -48,7 +48,14 @@ export class PostsService {
     const readingStats = calculateReadingStats(input.content);
     const excerpt = input.excerpt || extractExcerpt(input.content);
 
-    const isPublished = input.status === "PUBLISHED";
+    // Regular READER users who attempt to publish go to PENDING_REVIEW
+    let status = input.status || "DRAFT";
+    if (userRole === "READER" && status === "PUBLISHED") {
+      status = "PENDING_REVIEW";
+    }
+
+    const isPublished = status === "PUBLISHED";
+    const isPendingReview = status === "PENDING_REVIEW";
     const publishedAt = isPublished ? new Date() : null;
     const scheduledPublishAt = input.scheduledPublishAt
       ? new Date(input.scheduledPublishAt)
@@ -63,7 +70,7 @@ export class PostsService {
         excerpt,
         coverImage: input.coverImage,
         coverImageId: input.coverImageId,
-        status: input.status || "DRAFT",
+        status,
         readingTimeMinutes: readingStats.readingTimeMinutes,
         wordCount: readingStats.wordCount,
         metaTitle: input.metaTitle || input.title,
@@ -100,6 +107,14 @@ export class PostsService {
     // Notify followers if published immediately
     if (isPublished) {
       await NotificationService.notifyFollowers(userId, post.title, post.slug);
+    } else if (isPendingReview) {
+      await NotificationService.notifyAdminsForReview({
+        id: post.id,
+        title: post.title,
+        slug: post.slug,
+        excerpt: post.excerpt,
+        authorId: userId,
+      });
     }
 
     return this.getPostById(post.id);
@@ -378,6 +393,11 @@ export class PostsService {
       });
     }
 
+    let status = input.status;
+    if (userRole === "READER" && status === "PUBLISHED") {
+      status = "PENDING_REVIEW";
+    }
+
     const updated = await prisma.post.update({
       where: { id },
       data: {
@@ -392,7 +412,7 @@ export class PostsService {
         ...(input.coverImage !== undefined && { coverImage: input.coverImage }),
         ...(input.coverImageId !== undefined && { coverImageId: input.coverImageId }),
         ...(input.categoryId !== undefined && { categoryId: input.categoryId }),
-        ...(input.status && { status: input.status }),
+        ...(status && { status }),
         ...(input.scheduledPublishAt !== undefined && {
           scheduledPublishAt: input.scheduledPublishAt ? new Date(input.scheduledPublishAt) : null,
         }),
@@ -412,6 +432,16 @@ export class PostsService {
       await CacheService.invalidatePostCaches(slug, id);
     }
 
+    if (status === "PENDING_REVIEW") {
+      await NotificationService.notifyAdminsForReview({
+        id: updated.id,
+        title: updated.title,
+        slug: updated.slug,
+        excerpt: updated.excerpt,
+        authorId: post.authorId,
+      });
+    }
+
     return this.getPostById(updated.id);
   }
 
@@ -423,6 +453,27 @@ export class PostsService {
 
     if (post.authorId !== userId && userRole !== "ADMIN") {
       throw new AppError("You do not have permission to publish this post", 403);
+    }
+
+    // READER users go to review
+    if (userRole === "READER") {
+      const updated = await prisma.post.update({
+        where: { id },
+        data: {
+          status: "PENDING_REVIEW",
+        },
+      });
+
+      await CacheService.invalidatePostCaches(post.slug, id);
+      await NotificationService.notifyAdminsForReview({
+        id: post.id,
+        title: post.title,
+        slug: post.slug,
+        excerpt: post.excerpt,
+        authorId: post.authorId,
+      });
+
+      return updated;
     }
 
     const updated = await prisma.post.update({
@@ -438,6 +489,77 @@ export class PostsService {
     await NotificationService.notifyFollowers(post.authorId, post.title, post.slug);
 
     return updated;
+  }
+
+  async approvePost(id: string, adminId: string) {
+    const post = await prisma.post.findUnique({ where: { id } });
+    if (!post) {
+      throw new AppError("Post not found", 404);
+    }
+
+    const updated = await prisma.post.update({
+      where: { id },
+      data: {
+        status: "PUBLISHED",
+        publishedAt: new Date(),
+        scheduledPublishAt: null,
+      },
+    });
+
+    await CacheService.invalidatePostCaches(post.slug, id);
+    await NotificationService.notifyAuthorPostApproved(post.authorId, post.title, post.slug);
+    await NotificationService.notifyFollowers(post.authorId, post.title, post.slug);
+
+    return updated;
+  }
+
+  async rejectPost(id: string, adminId: string, reason?: string) {
+    const post = await prisma.post.findUnique({ where: { id } });
+    if (!post) {
+      throw new AppError("Post not found", 404);
+    }
+
+    const updated = await prisma.post.update({
+      where: { id },
+      data: {
+        status: "REJECTED",
+      },
+    });
+
+    await CacheService.invalidatePostCaches(post.slug, id);
+    await NotificationService.send({
+      userId: post.authorId,
+      actorId: adminId,
+      type: "POST_REJECTED",
+      message: `Your story "${post.title}" was not approved.${reason ? ` Feedback: ${reason}` : ""}`,
+      data: { postId: post.id, reason },
+    });
+
+    return updated;
+  }
+
+  async getPendingReviewPosts() {
+    const posts = await prisma.post.findMany({
+      where: {
+        status: "PENDING_REVIEW",
+        deletedAt: null,
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profile: { select: { profilePicture: true } },
+          },
+        },
+        category: true,
+      },
+    });
+
+    return posts;
   }
 
   async schedulePost(id: string, userId: string, userRole: string, scheduledDateStr: string) {

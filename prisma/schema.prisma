@@ -55,7 +55,7 @@ model Post {
   contentHtml        String?         // Rendered & sanitized HTML
   coverImage         String?         // Cloudinary URL
   coverImageId       String?         // Cloudinary public_id
-  status             String          @default("DRAFT") // DRAFT | PUBLISHED | SCHEDULED | ARCHIVED
+  status             String          @default("DRAFT") // DRAFT | PENDING_REVIEW | PUBLISHED | SCHEDULED | ARCHIVED | REJECTED
   readingTimeMinutes Int             @default(0)
   wordCount          Int             @default(0)
   viewCount          Int             @default(0)

@@ -9,7 +9,11 @@ import {
 
 export const createPost = async (req: Request, res: Response): Promise<void> => {
   const validated = createPostSchema.parse(req.body);
-  const post = await postsService.createPost(req.user!.id, validated);
+  const post = await postsService.createPost(
+    req.user!.id,
+    req.user!.role || "READER",
+    validated
+  );
   res.status(201).json({ status: "success", data: post });
 };
 
@@ -51,6 +55,24 @@ export const publishPost = async (req: Request, res: Response): Promise<void> =>
     req.user!.role || "READER"
   );
   res.status(200).json({ status: "success", data: post });
+};
+
+export const approvePost = async (req: Request, res: Response): Promise<void> => {
+  const id = String(req.params.id);
+  const post = await postsService.approvePost(id, req.user!.id);
+  res.status(200).json({ status: "success", data: post });
+};
+
+export const rejectPost = async (req: Request, res: Response): Promise<void> => {
+  const id = String(req.params.id);
+  const { reason } = req.body || {};
+  const post = await postsService.rejectPost(id, req.user!.id, reason);
+  res.status(200).json({ status: "success", data: post });
+};
+
+export const getPendingPosts = async (_req: Request, res: Response): Promise<void> => {
+  const posts = await postsService.getPendingReviewPosts();
+  res.status(200).json({ status: "success", data: posts });
 };
 
 export const schedulePost = async (req: Request, res: Response): Promise<void> => {

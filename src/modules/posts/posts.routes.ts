@@ -6,6 +6,9 @@ import {
   getPostById,
   updatePost,
   publishPost,
+  approvePost,
+  rejectPost,
+  getPendingPosts,
   schedulePost,
   archivePost,
   deletePost,
@@ -84,21 +87,26 @@ const router = Router();
  *         description: Post draft created
  */
 router.get("/", getPosts);
-router.post("/", authenticate, requireRole("AUTHOR", "ADMIN"), writeLimiter, createPost);
+router.post("/", authenticate, writeLimiter, createPost);
+
+// Admin Moderation Queue
+router.get("/admin/pending", authenticate, requireRole("ADMIN"), getPendingPosts);
+router.post("/:id/approve", authenticate, requireRole("ADMIN"), approvePost);
+router.post("/:id/reject", authenticate, requireRole("ADMIN"), rejectPost);
 
 router.get("/slug/:slug", optionalAuthenticate, getPostBySlug);
 router.get("/:id", getPostById);
-router.put("/:id", authenticate, requireRole("AUTHOR", "ADMIN"), writeLimiter, updatePost);
-router.delete("/:id", authenticate, requireRole("AUTHOR", "ADMIN"), deletePost);
+router.put("/:id", authenticate, writeLimiter, updatePost);
+router.delete("/:id", authenticate, deletePost);
 
 // Lifecycle routes
-router.post("/:id/publish", authenticate, requireRole("AUTHOR", "ADMIN"), publishPost);
+router.post("/:id/publish", authenticate, publishPost);
 router.post("/:id/schedule", authenticate, requireRole("AUTHOR", "ADMIN"), schedulePost);
-router.post("/:id/archive", authenticate, requireRole("AUTHOR", "ADMIN"), archivePost);
-router.post("/:id/restore", authenticate, requireRole("AUTHOR", "ADMIN"), restorePost);
+router.post("/:id/archive", authenticate, archivePost);
+router.post("/:id/restore", authenticate, restorePost);
 
 // Version history / revisions
-router.get("/:id/revisions", authenticate, requireRole("AUTHOR", "ADMIN"), getRevisions);
-router.post("/:id/revisions/:revisionId/restore", authenticate, requireRole("AUTHOR", "ADMIN"), restoreRevision);
+router.get("/:id/revisions", authenticate, getRevisions);
+router.post("/:id/revisions/:revisionId/restore", authenticate, restoreRevision);
 
 export default router;
