@@ -47,8 +47,8 @@ COPY docker-entrypoint.sh ./
 
 RUN chmod +x docker-entrypoint.sh
 
-# Create database data directory with correct ownership for node user
-RUN mkdir -p /app/prisma && chown -R node:node /app
+# Create database and app data directory with correct ownership for node user
+RUN mkdir -p /app/data /app/prisma && chown -R node:node /app
 
 USER node
 
