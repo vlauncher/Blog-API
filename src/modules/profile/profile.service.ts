@@ -13,6 +13,7 @@ export class ProfileService {
         firstName: true,
         lastName: true,
         email: true,
+        role: true,
         isVerified: true,
         createdAt: true,
         profile: {
